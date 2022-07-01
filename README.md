@@ -1,3 +1,7 @@
+
+### Info
+- Parse input string with numeral words and return data about words with values for each numeral word
+
 ### Usage
 ```bash
 echo "сорок два" | perl parser.pl
