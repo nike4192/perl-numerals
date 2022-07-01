@@ -1,6 +1,6 @@
 
 ### Info
-- Parse input string with numeral words and return data about words with values for each numeral word
+Parse input string with numeral words and return data about words with values for each numeral word
 
 ### Usage
 ```bash
