@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Perl numeral</title>
+    <style>
+        .numeral, .group-numerals {
+            position: relative;
+            cursor: default;
+        }
+        .numeral {
+            text-decoration: underline;
+            cursor: pointer;
+        }
+        .numeral:hover,
+        #result-container[show-highlight-value] .numeral {
+            background-color: yellow;
+        }
+        .numeral:hover::after,
+        #result-container[show-value] .numeral::after {
+            content: attr(value);
+            position: absolute;
+            left: 0;
+            line-height: 1em;
+            top: 1.3em;
+        }
+        .group-numerals::before {
+            content: '[';
+        }
+        .group-numerals::after {
+            content: ']';
+        }
+        .group-numerals:hover::after,
+        #result-container[show-group-value] .group-numerals::after {
+            content: '] = ' attr(value);
+        }
+        #text-input {
+            width: 300px;
+            height: 150px;
+        }
+        pre {
+            white-space: break-spaces;
+            line-height: 2.5em;
+        }
+        .button-container {
+            margin: 0.5em 0;
+        }
+    </style>
+</head>
+<body>
+<textarea id="text-input">
+тысяча и одна ночь
+нет двадцати семи тысяч пятисот рублей
+восемью десятью одним человеком
+сто двадцать три миллиона
+</textarea>
+    <div class="button-container">
+        <button id="parse-button">Parse</button>
+        <label>
+            <input type="checkbox" id="checkbox-value">
+            <span>Show values</span>
+        </label>
+        <label>
+            <input type="checkbox" id="checkbox-group-value">
+            <span>Show group values</span>
+        </label>
+        <label>
+            <input type="checkbox" id="checkbox-highlight-value">
+            <span>Highlight values</span>
+        </label>
+    </div>
+    <div class="button-container">
+        <button id="export-csv-button">Export CSV</button>
+        <button id="export-txt-button">Export TXT</button>
+    </div>
+    <div id="result-container"></div>
+    <script>
+        let storageData;
+
+        let input = document.getElementById('text-input');
+        let button = document.getElementById('parse-button');
+        let exportCSVButton = document.getElementById('export-csv-button');
+        let exportTXTButton = document.getElementById('export-txt-button');
+        let container = document.getElementById('result-container');
+
+        let checkboxValue = document.getElementById('checkbox-value');
+        let checkboxGroupValue = document.getElementById('checkbox-group-value');
+        let checkboxHighlightValue = document.getElementById('checkbox-highlight-value');
+
+        // Checkboxes
+        checkboxValue.oninput = function(e) {
+            if (this.checked) {
+                container.setAttribute('show-value', '');
+            } else {
+                container.removeAttribute('show-value', '');
+            }
+        }
+
+        checkboxGroupValue.oninput = function(e) {
+            if (this.checked) {
+                container.setAttribute('show-group-value', '');
+            } else {
+                container.removeAttribute('show-group-value', '');
+            }
+        }
+
+        checkboxHighlightValue.oninput = function(e) {
+            if (this.checked) {
+                container.setAttribute('show-highlight-value', '');
+            } else {
+                container.removeAttribute('show-highlight-value', '');
+            }
+        }
+
+        // Buttons
+        button.addEventListener('click', parseInputValue);
+        button.click();
+
+        exportCSVButton.addEventListener('click', exportCSV);
+        exportCSVButton.disabled = true;
+
+        exportTXTButton.addEventListener('click', exportTXT);
+        exportTXTButton.disabled = true;
+
+        // https://stackoverflow.com/questions/3665115/how-to-create-a-file-in-memory-for-user-to-download-but-not-through-server
+        function exportFile(content, filename='data') {
+            let a = document.createElement('a');
+            a.setAttribute('href', content);
+            a.setAttribute('download', filename);
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        // https://stackoverflow.com/questions/14964035/how-to-export-javascript-array-info-to-csv-on-client-side
+        function exportCSV() {
+            let csvContent = createCSV(storageData);
+            exportFile(csvContent);
+        }
+
+        function escapeCSVString(string) {
+            return '"' + string.replace(/"/g, '""') + '"';
+        }
+
+        function createCSV(data) {
+            let csvContent = 'data:text/csv;charset=utf-8,';
+            csvContent += ['Позиция в тексте', 'Значение', 'Нахождение'].join(',') + '\r\n';
+            data.numerals.forEach(group => {
+                csvContent += ['', group.numeral_value].join(',') + '\r\n';
+                group.expr_chain.forEach(expr => {
+                    let exprValue = expr.matches[0].value;
+                    csvContent += [expr.index, exprValue, expr.word].join(',') + '\r\n';
+                });
+            });
+            return csvContent;
+        }
+
+        function exportTXT() {
+            let txtContent = createTXT(storageData);
+            exportFile(txtContent)
+        }
+
+
+        function createTXT(data) {
+            let txtContent = 'data:text/plain;charset=utf-8,';
+            data.numerals.forEach(group => {
+                txtContent += group.numeral_value + ' - ';
+                let wordPieces = group.expr_chain.map(expr => {
+                    let exprValue = expr.matches[0].value;
+                    return `${expr.word} [${expr.index}, ${exprValue}]`;
+                });
+                txtContent += wordPieces.join(' ') + '\r\n';
+            });
+            return txtContent;
+        }
+
+        function parseInputValue() {
+            let value = input.value;
+            exportCSVButton.disabled = true;
+            exportTXTButton.disabled = true;
+            sendRequest(value)
+                .then(function (data) {
+                    storageData = data;  // Save for further uses
+                    let el = createResultElement(value, data);
+                    container.innerHTML = '';
+                    container.append(el);
+                })
+                .finally(() => {
+                    exportCSVButton.disabled = false;
+                    exportTXTButton.disabled = false;
+                });
+        }
+
+        function getNodeAndIndexByTextPosition(el, index) {
+            let localIndex;
+            let node = (function recursiveWalk(el, index) {
+                for (let i = 0; i < el.childNodes.length; i++) {
+                    let child = el.childNodes[i];
+                    if (child instanceof Text && child.wholeText) {  // Without empty strings
+                        if (index <= child.length && !child.nextSibling) {
+                            localIndex = index;  // Save local index
+                            return child;  // Text Node
+                        } else {
+                            index -= child.length;  // Offset
+                        }
+                    } else {
+                        let value = recursiveWalk(child, index);
+                        if (value instanceof Node) {
+                            return value;  // Text Node
+                        } else {
+                            index = value;  // Index from nested node
+                        }
+                    }
+                }
+                return index;
+            })(el, index);
+
+            return {
+                node, localIndex
+            };
+        }
+
+        function surroundByStartAndEnd(el, startIndex, endIndex, node) {  // Closure
+            let start = getNodeAndIndexByTextPosition(el, startIndex);
+            let end = getNodeAndIndexByTextPosition(el, endIndex);
+            // console.log(el, start, end);
+            let range = new Range();
+            range.setStart(start.node, start.localIndex);
+            range.setEnd(end.node, end.localIndex);
+            range.surroundContents(node);
+        }
+
+        function createResultElement(value, data) {
+            let pre = document.createElement('pre');
+            pre.textContent = value;
+            data.numerals.forEach(group => {
+                let groupStart = group.expr_chain[0];
+                let groupEnd = group.expr_chain[group.expr_chain.length - 1];
+                let numeralValue = group.numeral_value;
+                let groupStartIndex = groupStart.index;
+                let groupEndIndex = groupEnd.index + groupEnd.word.length;
+                let groupSpan = document.createElement('span');
+                groupSpan.className = 'group-numerals';
+                groupSpan.setAttribute('value', numeralValue);
+                surroundByStartAndEnd(pre, groupStartIndex, groupEndIndex, groupSpan);
+
+                group.expr_chain.forEach(expr => {
+                    let startIndex = expr.index;
+                    let endIndex = startIndex + expr.word.length;
+                    let value = expr.matches[0].value;
+                    let span = document.createElement('span');
+                    span.onclick = () => alert(JSON.stringify(expr.matches, null, 2));
+                    span.className = 'numeral';
+                    span.setAttribute('value', value);
+                    surroundByStartAndEnd(pre, startIndex, endIndex, span);
+                });
+            });
+            return pre;
+        }
+
+        async function sendRequest(body) {
+            let response = await fetch('parser', {method: 'POST', body});
+            let text = await response.text();
+            try {
+                let data = JSON.parse(text);
+                return data;
+            } catch(e) {
+                console.log(text);
+                throw e;
+            }
+        }
+    </script>
+</body>
+</html>
